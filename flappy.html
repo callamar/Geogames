@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>FLAPPY</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+html, body {
+  width:100%; height:100%;
+  overflow:hidden;
+  touch-action:none;
+  background:#000;
+  font-family:'Press Start 2P', monospace;
+}
+
+#c {
+  display:block;
+  width:100%;
+  height:100%;
+  touch-action:none;
+}
+
+#overlay {
+  position:fixed; inset:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:18px;
+  background:rgba(0,0,0,0.72);
+  backdrop-filter:blur(3px);
+  opacity:0; pointer-events:none;
+  transition:opacity 0.3s;
+  padding:24px;
+}
+#overlay.visible { opacity:1; pointer-events:all; }
+
+#ov-title {
+  font-size:clamp(1.1rem,5vw,1.8rem);
+  text-align:center;
+  line-height:1.6;
+  letter-spacing:0.1em;
+}
+
+#ov-sub {
+  font-size:clamp(0.5rem,2.2vw,0.7rem);
+  color:rgba(255,255,255,0.55);
+  text-align:center;
+  line-height:2;
+  letter-spacing:0.08em;
+}
+
+#secret-box {
+  font-size:clamp(0.9rem,4vw,1.3rem);
+  color:#ffe600;
+  text-shadow:0 0 14px #ffe600, 0 0 40px #ffe60066;
+  background:rgba(255,230,0,0.08);
+  border:1px solid rgba(255,230,0,0.4);
+  padding:14px 22px;
+  letter-spacing:0.25em;
+  display:none;
+  animation:blink 1.4s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+#ov-score {
+  font-size:clamp(0.5rem,2vw,0.65rem);
+  color:rgba(255,255,255,0.4);
+}
+
+#play-btn {
+  font-family:'Press Start 2P', monospace;
+  font-size:clamp(0.55rem,2.4vw,0.75rem);
+  background:transparent;
+  border:1px solid #00fff0;
+  color:#00fff0;
+  padding:14px 30px;
+  cursor:pointer;
+  letter-spacing:0.15em;
+  box-shadow:0 0 12px #00fff0aa;
+  transition:all 0.15s;
+}
+#play-btn:active {
+  background:#00fff0;
+  color:#000;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="overlay" class="visible">
+  <div id="ov-title" style="color:#00fff0;text-shadow:0 0 16px #00fff0aa;">FLAPPY<br>BIRD</div>
+  <div id="ov-sub">Appuie pour faire voler l'oiseau<br>Passe entre les tuyaux<br><br>Score 10 = secret 🔐</div>
+  <div id="secret-box">35JP235HVD</div>
+  <div id="ov-score"></div>
+  <button id="play-btn">▶ JOUER</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+
+// ── Responsive ──
+let W, H, PIPE_W, GAP, BIRD_R, GRAVITY, FLAP, PIPE_SPEED, GROUND_H;
+
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  PIPE_W    = Math.round(W * 0.13);
+  GAP       = Math.round(H * 0.28);
+  BIRD_R    = Math.round(Math.min(W, H) * 0.038);
+  GRAVITY   = H * 0.0012;
+  FLAP      = -H * 0.018;
+  PIPE_SPEED= W * 0.004;
+  GROUND_H  = Math.round(H * 0.12);
+}
+resize();
+window.addEventListener('resize', () => { resize(); if (!running) drawStatic(); });
+
+// ── Palette ──
+const SKY_TOP    = '#1a1a2e';
+const SKY_BOT    = '#16213e';
+const PIPE_COL   = '#2ecc40';
+const PIPE_DARK  = '#1a7a27';
+const PIPE_SHINE = '#5fff6e';
+const GROUND_COL = '#c8a850';
+const GROUND_TOP = '#e8c870';
+
+// ── State ──
+let bird, pipes, score, running, dead, secretShown, raf;
+let bgStars = [];
+
+function makeStar() {
+  return { x: Math.random()*W, y: Math.random()*(H*0.75), r: Math.random()*1.5+0.5, a: Math.random() };
+}
+function initStars() { bgStars = Array.from({length:60}, makeStar); }
+
+function initGame() {
+  bird = { x: W*0.22, y: H*0.45, vy: 0, angle: 0, frame: 0 };
+  pipes = [];
+  score = 0;
+  running = false;
+  dead = false;
+  secretShown = false;
+}
+
+// ── Pipe spawn ──
+let pipeTimer = 0;
+const PIPE_INTERVAL = 90; // frames
+
+function spawnPipe() {
+  const minTop = H * 0.12;
+  const maxTop = H - GROUND_H - GAP - H * 0.12;
+  const topH   = minTop + Math.random() * (maxTop - minTop);
+  pipes.push({ x: W + PIPE_W, topH, scored: false });
+}
+
+// ── Input ──
+function flap() {
+  if (dead) return;
+  if (!running) { running = true; }
+  bird.vy = FLAP;
+}
+
+document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); flap(); } });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, {passive:false});
+canvas.addEventListener('mousedown',  e => { flap(); });
+
+document.getElementById('play-btn').addEventListener('click', startGame);
+
+// ── Game loop ──
+function startGame() {
+  hideOverlay();
+  initGame();
+  initStars();
+  if (raf) cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(loop);
+}
+
+function loop() {
+  update();
+  draw();
+  if (!dead) raf = requestAnimationFrame(loop);
+}
+
+function update() {
+  if (!running) return;
+
+  // Bird physics
+  bird.vy += GRAVITY;
+  bird.y  += bird.vy;
+  bird.angle = Math.max(-0.4, Math.min(Math.PI/2, bird.vy * 0.08));
+  bird.frame++;
+
+  // Ground / ceiling
+  if (bird.y - BIRD_R <= 0) { bird.y = BIRD_R; bird.vy = 0; }
+  if (bird.y + BIRD_R >= H - GROUND_H) { triggerDeath(); return; }
+
+  // Pipes
+  pipeTimer++;
+  if (pipeTimer >= PIPE_INTERVAL) { spawnPipe(); pipeTimer = 0; }
+
+  for (let i = pipes.length - 1; i >= 0; i--) {
+    const p = pipes[i];
+    p.x -= PIPE_SPEED;
+
+    // Score
+    if (!p.scored && p.x + PIPE_W < bird.x) {
+      p.scored = true;
+      score++;
+      if (score === 10 && !secretShown) {
+        secretShown = true;
+        setTimeout(showSecret, 200);
+      }
+    }
+
+    // Collision
+    const bx = bird.x, by = bird.y;
+    if (bx + BIRD_R*0.8 > p.x && bx - BIRD_R*0.8 < p.x + PIPE_W) {
+      if (by - BIRD_R*0.8 < p.topH || by + BIRD_R*0.8 > p.topH + GAP) {
+        triggerDeath(); return;
+      }
+    }
+
+    if (p.x + PIPE_W < 0) pipes.splice(i, 1);
+  }
+
+  // Twinkle stars
+  bgStars.forEach(s => { s.a += 0.02; if (s.a > Math.PI*2) s.a = 0; });
+}
+
+function triggerDeath() {
+  dead = true;
+  running = false;
+  setTimeout(() => showOverlay('gameover'), 600);
+}
+
+// ── Draw ──
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  drawBg();
+  drawPipes();
+  drawBird();
+  drawGround();
+  drawScore();
+  if (!running && !dead) drawTapHint();
+}
+
+function drawStatic() {
+  ctx.clearRect(0,0,W,H);
+  drawBg();
+  drawGround();
+}
+
+function drawBg() {
+  const grd = ctx.createLinearGradient(0,0,0,H);
+  grd.addColorStop(0, SKY_TOP);
+  grd.addColorStop(1, SKY_BOT);
+  ctx.fillStyle = grd;
+  ctx.fillRect(0,0,W,H);
+
+  // Stars
+  bgStars.forEach(s => {
+    const alpha = 0.4 + 0.4 * Math.sin(s.a);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fill();
+  });
+
+  // Moon
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,240,180,0.5)';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#fff8d0';
+  ctx.beginPath();
+  ctx.arc(W*0.82, H*0.1, Math.min(W,H)*0.04, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = SKY_TOP;
+  ctx.beginPath();
+  ctx.arc(W*0.84, H*0.095, Math.min(W,H)*0.035, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // Distant city silhouette
+  ctx.fillStyle = 'rgba(20,30,60,0.7)';
+  const buildings = [0.05,0.18,0.1,0.22,0.08,0.15,0.25,0.12,0.09,0.2,0.07,0.17];
+  let bx = 0;
+  buildings.forEach((bw, i) => {
+    const bwPx = W * bw;
+    const bh   = H * (0.06 + (i%4)*0.04);
+    ctx.fillRect(bx, H - GROUND_H - bh, bwPx - 2, bh);
+    bx += bwPx;
+  });
+}
+
+function drawPipe(x, topH) {
+  const capH = Math.round(H * 0.035);
+  const capW = PIPE_W + Math.round(W * 0.02);
+  const capX = x - (capW - PIPE_W) / 2;
+
+  // Top pipe body
+  const gT = ctx.createLinearGradient(x, 0, x + PIPE_W, 0);
+  gT.addColorStop(0,   PIPE_DARK);
+  gT.addColorStop(0.3, PIPE_COL);
+  gT.addColorStop(0.6, PIPE_SHINE);
+  gT.addColorStop(1,   PIPE_DARK);
+  ctx.fillStyle = gT;
+  ctx.fillRect(x, 0, PIPE_W, topH);
+
+  // Top cap
+  ctx.fillStyle = PIPE_COL;
+  ctx.fillRect(capX, topH - capH, capW, capH);
+  ctx.fillStyle = PIPE_SHINE;
+  ctx.fillRect(capX + 2, topH - capH + 2, 4, capH - 4);
+  ctx.fillStyle = PIPE_DARK;
+  ctx.fillRect(capX + capW - 4, topH - capH, 4, capH);
+
+  // Bottom pipe body
+  const botY = topH + GAP;
+  const gB = ctx.createLinearGradient(x, 0, x + PIPE_W, 0);
+  gB.addColorStop(0,   PIPE_DARK);
+  gB.addColorStop(0.3, PIPE_COL);
+  gB.addColorStop(0.6, PIPE_SHINE);
+  gB.addColorStop(1,   PIPE_DARK);
+  ctx.fillStyle = gB;
+  ctx.fillRect(x, botY, PIPE_W, H - botY);
+
+  // Bottom cap
+  ctx.fillStyle = PIPE_COL;
+  ctx.fillRect(capX, botY, capW, capH);
+  ctx.fillStyle = PIPE_SHINE;
+  ctx.fillRect(capX + 2, botY + 2, 4, capH - 4);
+  ctx.fillStyle = PIPE_DARK;
+  ctx.fillRect(capX + capW - 4, botY, 4, capH);
+}
+
+function drawPipes() {
+  pipes.forEach(p => drawPipe(p.x, p.topH));
+}
+
+function drawBird() {
+  const { x, y, angle, vy, frame } = bird;
+  const r = BIRD_R;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(2, r*0.8, r*0.7, r*0.25, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Body
+  const bodyGrd = ctx.createRadialGradient(-r*0.2, -r*0.2, r*0.1, 0, 0, r);
+  bodyGrd.addColorStop(0, '#ffe033');
+  bodyGrd.addColorStop(0.6, '#ffb800');
+  bodyGrd.addColorStop(1, '#e07800');
+  ctx.fillStyle = bodyGrd;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r, r*0.88, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Wing flap
+  const wingY = r * 0.15;
+  const wingOff = Math.sin(frame * 0.35) * r * 0.25;
+  ctx.fillStyle = '#e07800';
+  ctx.beginPath();
+  ctx.ellipse(-r*0.1, wingY + wingOff, r*0.5, r*0.3, -0.4, 0, Math.PI*2);
+  ctx.fill();
+
+  // Eye white
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.ellipse(r*0.3, -r*0.2, r*0.35, r*0.32, 0.2, 0, Math.PI*2);
+  ctx.fill();
+
+  // Pupil
+  ctx.fillStyle = '#1a1a2e';
+  ctx.beginPath();
+  ctx.arc(r*0.38, -r*0.18, r*0.16, 0, Math.PI*2);
+  ctx.fill();
+
+  // Eye shine
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(r*0.43, -r*0.24, r*0.07, 0, Math.PI*2);
+  ctx.fill();
+
+  // Beak
+  ctx.fillStyle = '#ff8800';
+  ctx.beginPath();
+  ctx.moveTo(r*0.6,  -r*0.05);
+  ctx.lineTo(r*1.1,  r*0.05);
+  ctx.lineTo(r*0.6,  r*0.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#cc5500';
+  ctx.beginPath();
+  ctx.moveTo(r*0.6, r*0.05);
+  ctx.lineTo(r*1.1, r*0.05);
+  ctx.lineTo(r*0.6, r*0.2);
+  ctx.closePath();
+  ctx.fill();
+
+  // Glow when flying up
+  if (vy < -H*0.005) {
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#ffe033';
+    ctx.beginPath();
+    ctx.arc(0, 0, r*1.4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+function drawGround() {
+  // Dirt
+  const grd = ctx.createLinearGradient(0, H-GROUND_H, 0, H);
+  grd.addColorStop(0, GROUND_TOP);
+  grd.addColorStop(0.3, GROUND_COL);
+  grd.addColorStop(1, '#8b6914');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, H-GROUND_H, W, GROUND_H);
+
+  // Grass strip
+  ctx.fillStyle = '#4caf50';
+  ctx.fillRect(0, H-GROUND_H, W, Math.round(H*0.018));
+  ctx.fillStyle = '#66bb6a';
+  ctx.fillRect(0, H-GROUND_H, W, Math.round(H*0.008));
+
+  // Ground lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 1;
+  for (let lx = 0; lx < W; lx += 40) {
+    ctx.beginPath();
+    ctx.moveTo(lx, H-GROUND_H+6);
+    ctx.lineTo(lx+20, H-GROUND_H+GROUND_H*0.6);
+    ctx.stroke();
+  }
+}
+
+function drawScore() {
+  if (!running && !dead) return;
+  const s = score.toString();
+  const fs = Math.round(Math.min(W,H) * 0.075);
+  ctx.font = `${fs}px 'Press Start 2P'`;
+  ctx.textAlign = 'center';
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillText(s, W/2 + 3, H*0.1 + 3);
+  // White
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = 'rgba(255,255,255,0.4)';
+  ctx.shadowBlur = 8;
+  ctx.fillText(s, W/2, H*0.1);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+}
+
+function drawTapHint() {
+  const alpha = 0.5 + 0.5 * Math.sin(Date.now() * 0.004);
+  ctx.globalAlpha = alpha;
+  ctx.font = `${Math.round(Math.min(W,H)*0.03)}px 'Press Start 2P'`;
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.fillText('APPUIE POUR VOLER', W/2, H*0.55);
+  ctx.textAlign = 'left';
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(() => { if (!running && !dead) { drawStatic(); drawBird(); drawScore(); drawTapHint(); } });
+}
+
+// ── Overlay ──
+function showOverlay(type) {
+  const ov     = document.getElementById('overlay');
+  const title  = document.getElementById('ov-title');
+  const sub    = document.getElementById('ov-sub');
+  const secret = document.getElementById('secret-box');
+  const sc     = document.getElementById('ov-score');
+  const btn    = document.getElementById('play-btn');
+
+  ov.classList.add('visible');
+
+  if (type === 'gameover') {
+    title.innerHTML = 'GAME<br>OVER';
+    title.style.color = '#ff3cac';
+    title.style.textShadow = '0 0 16px #ff3cacaa';
+    sub.innerHTML = `Tu as passé <span style="color:#ffe600">${score}</span> tuyau${score>1?'x':''}`;
+    secret.style.display = 'none';
+    sc.textContent = score >= 10 ? '🏆 RECORD !' : '';
+    btn.textContent = '↺ REJOUER';
+  } else if (type === 'secret') {
+    title.innerHTML = '🔐 SECRET<br>DÉBLOQUÉ !';
+    title.style.color = '#ffe600';
+    title.style.textShadow = '0 0 16px #ffe600aa';
+    sub.innerHTML = 'Incroyable ! Tu as atteint 10 !<br>Ton code secret :';
+    secret.style.display = 'block';
+    sc.textContent = `SCORE : ${score}`;
+    btn.textContent = '▶ CONTINUER';
+  }
+}
+
+function hideOverlay() {
+  document.getElementById('overlay').classList.remove('visible');
+}
+
+function showSecret() {
+  running = false;
+  if (raf) cancelAnimationFrame(raf);
+  draw();
+  showOverlay('secret');
+}
+
+document.getElementById('play-btn').addEventListener('click', () => {
+  const type = document.getElementById('ov-title').textContent;
+  if (type.includes('SECRET')) {
+    hideOverlay();
+    // Continue playing
+    dead = false;
+    secretShown = true;
+    running = true;
+    raf = requestAnimationFrame(loop);
+  } else {
+    startGame();
+  }
+});
+
+// ── Boot ──
+initGame();
+initStars();
+drawStatic();
+drawBird();
+
+// Animate stars on start screen
+(function starLoop() {
+  if (!running && !dead) {
+    bgStars.forEach(s => { s.a += 0.015; });
+    drawStatic();
+    drawBird();
+    drawTapHint();
+    requestAnimationFrame(starLoop);
+  }
+})();
+</script>
+</body>
+</html>
