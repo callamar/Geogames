@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Sky Jumper</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700;900&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; touch-action: none; }
+
+  body {
+    background: #1a1a2e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Nunito', sans-serif;
+  }
+
+  #game-wrapper {
+    position: relative;
+    width: 360px;
+    height: 640px;
+    overflow: hidden;
+    border-radius: 24px;
+    box-shadow: 0 0 60px rgba(120,80,255,0.4), 0 0 0 2px rgba(255,255,255,0.08);
+  }
+
+  canvas {
+    display: block;
+    width: 360px;
+    height: 640px;
+  }
+
+  #ui {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+
+  #score-display {
+    position: absolute;
+    top: 18px; left: 0; right: 0;
+    text-align: center;
+    font-family: 'Fredoka One', cursive;
+    font-size: 36px;
+    color: #fff;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    letter-spacing: 1px;
+  }
+
+  /* SCREENS */
+  .screen {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+    padding: 2rem;
+    background: rgba(15,12,35,0.88);
+    backdrop-filter: blur(6px);
+    pointer-events: all;
+  }
+  .screen.hidden { display: none; }
+
+  .screen h1 {
+    font-family: 'Fredoka One', cursive;
+    font-size: 52px;
+    color: #fff;
+    text-align: center;
+    line-height: 1.1;
+    text-shadow: 0 0 30px rgba(160,120,255,0.8);
+  }
+
+  .screen p {
+    font-size: 15px;
+    color: rgba(255,255,255,0.6);
+    text-align: center;
+    line-height: 1.6;
+    max-width: 260px;
+  }
+
+  .btn {
+    margin-top: 0.5rem;
+    padding: 14px 40px;
+    background: linear-gradient(135deg, #7c4dff, #e040fb);
+    border: none;
+    border-radius: 50px;
+    font-family: 'Fredoka One', cursive;
+    font-size: 22px;
+    color: #fff;
+    cursor: pointer;
+    pointer-events: all;
+    box-shadow: 0 4px 24px rgba(124,77,255,0.5);
+    transition: transform 0.1s, box-shadow 0.1s;
+    letter-spacing: 0.5px;
+  }
+  .btn:active { transform: scale(0.95); box-shadow: 0 2px 12px rgba(124,77,255,0.3); }
+
+  .emoji-deco { font-size: 60px; line-height: 1; }
+
+  /* SECRET */
+  #secret-screen .secret-box {
+    background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,165,0,0.1));
+    border: 1.5px solid rgba(255,215,0,0.5);
+    border-radius: 16px;
+    padding: 1.2rem 2rem;
+    text-align: center;
+  }
+  #secret-screen .secret-label {
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: rgba(255,215,0,0.7);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  #secret-screen .secret-code {
+    font-family: 'Fredoka One', cursive;
+    font-size: 34px;
+    letter-spacing: 6px;
+    color: #ffd700;
+    text-shadow: 0 0 20px rgba(255,215,0,0.6);
+  }
+
+  /* MOBILE CONTROLS */
+  #controls {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 120px;
+    display: flex;
+    pointer-events: all;
+  }
+  #ctrl-left, #ctrl-right {
+    flex: 1;
+    height: 100%;
+    opacity: 0;
+  }
+
+  /* Stars BG */
+  #stars {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="game-wrapper">
+  <canvas id="canvas" width="360" height="640"></canvas>
+
+  <div id="ui">
+    <div id="score-display">0</div>
+  </div>
+
+  <!-- START -->
+  <div class="screen" id="start-screen">
+    <div class="emoji-deco">🐸</div>
+    <h1>Sky<br>Jumper</h1>
+    <p>Saute de plateforme en plateforme.<br>Atteins <strong style="color:#ffd700">100 points</strong> pour découvrir le secret !</p>
+    <p style="font-size:13px; color:rgba(255,255,255,0.4);">Incline ton téléphone ou touche<br>gauche/droite pour diriger</p>
+    <button class="btn" id="start-btn">Jouer !</button>
+  </div>
+
+  <!-- GAME OVER -->
+  <div class="screen hidden" id="gameover-screen">
+    <div class="emoji-deco">💀</div>
+    <h1>Game<br>Over</h1>
+    <p id="final-score-text" style="font-size:20px; color:#fff; font-weight:900;"></p>
+    <p id="best-score-text" style="color:rgba(255,255,255,0.5);"></p>
+    <button class="btn" id="retry-btn">Rejouer</button>
+  </div>
+
+  <!-- SECRET -->
+  <div class="screen hidden" id="secret-screen">
+    <div class="emoji-deco">🏆</div>
+    <h1 style="font-size:38px;">100 points !<br>Bravo !</h1>
+    <div class="secret-box">
+      <div class="secret-label">Code Secret</div>
+      <div class="secret-code">98CT21H63</div>
+    </div>
+    <p>Tu as atteint le sommet !<br>Continue à grimper !</p>
+    <button class="btn" id="continue-btn">Continuer</button>
+  </div>
+
+  <!-- TOUCH ZONES -->
+  <div id="controls">
+    <div id="ctrl-left"></div>
+    <div id="ctrl-right"></div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = 360, H = 640;
+
+// --- PALETTE ---
+const COLORS = {
+  sky1: '#0f0c23',
+  sky2: '#1a1040',
+  platform: ['#7c4dff','#e040fb','#00e5ff','#69ff47','#ff6d00'],
+  platformGlow: ['rgba(124,77,255,0.4)','rgba(224,64,251,0.4)','rgba(0,229,255,0.4)','rgba(105,255,71,0.4)','rgba(255,109,0,0.4)'],
+  player: '#69ff47',
+  playerEye: '#0f0c23',
+  star: 'rgba(255,255,255,0.7)',
+};
+
+// --- STATE ---
+let state = 'start'; // start | play | gameover | secret
+let score = 0;
+let bestScore = 0;
+let secretShown = false;
+let cameraY = 0;
+let player, platforms, stars, particles;
+let keys = { left: false, right: false };
+let tiltX = 0;
+let highestPlatformY = 0;
+let lastScorePlatformY = 0;
+
+// --- STARS ---
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 80; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H * 5,
+      r: Math.random() * 1.5 + 0.3,
+      a: Math.random() * 0.8 + 0.2,
+    });
+  }
+}
+
+// --- PLATFORM ---
+function makePlatform(x, y, ci) {
+  const c = ci !== undefined ? ci : Math.floor(Math.random() * COLORS.platform.length);
+  return { x, y, w: 70, h: 14, ci: c, bounce: false };
+}
+
+function initPlatforms() {
+  platforms = [];
+  // Starting platform (wide, safe)
+  platforms.push({ x: W/2 - 50, y: H - 80, w: 100, h: 14, ci: 0, bounce: false });
+  let py = H - 80;
+  for (let i = 0; i < 20; i++) {
+    py -= randomBetween(60, 110);
+    const px = randomBetween(10, W - 80);
+    platforms.push(makePlatform(px, py));
+  }
+  highestPlatformY = py;
+  lastScorePlatformY = H - 80;
+}
+
+function initPlayer() {
+  player = {
+    x: W / 2 - 18,
+    y: H - 120,
+    w: 36, h: 36,
+    vx: 0, vy: 0,
+    facing: 1,
+    squish: 1,
+    squishTimer: 0,
+  };
+}
+
+function initParticles() { particles = []; }
+
+function randomBetween(a, b) { return a + Math.random() * (b - a); }
+
+// --- INIT GAME ---
+function initGame() {
+  score = 0;
+  secretShown = false;
+  cameraY = 0;
+  initStars();
+  initPlatforms();
+  initPlayer();
+  initParticles();
+  document.getElementById('score-display').textContent = '0';
+}
+
+// --- SPAWN MORE PLATFORMS ---
+function spawnPlatforms() {
+  while (highestPlatformY > cameraY - H) {
+    highestPlatformY -= randomBetween(60, 120);
+    const px = randomBetween(10, W - 80);
+    platforms.push(makePlatform(px, highestPlatformY));
+  }
+  // Remove off-screen below
+  platforms = platforms.filter(p => p.y - cameraY < H + 100);
+}
+
+// --- PARTICLES ---
+function spawnParticles(x, y, color) {
+  for (let i = 0; i < 8; i++) {
+    particles.push({
+      x, y,
+      vx: randomBetween(-3, 3),
+      vy: randomBetween(-5, -1),
+      life: 1,
+      color,
+      r: randomBetween(2, 5),
+    });
+  }
+}
+
+function updateParticles() {
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15;
+    p.life -= 0.04;
+  });
+  particles = particles.filter(p => p.life > 0);
+}
+
+// --- PHYSICS ---
+const GRAVITY = 0.45;
+const JUMP_FORCE = -14;
+const SPEED = 5;
+
+function updatePlayer() {
+  // Horizontal
+  let moveX = 0;
+  if (keys.left) moveX -= 1;
+  if (keys.right) moveX += 1;
+  // Tilt
+  moveX += tiltX * 2.5;
+  moveX = Math.max(-1, Math.min(1, moveX));
+
+  player.vx = moveX * SPEED;
+  player.x += player.vx;
+
+  // Wrap
+  if (player.x + player.w < 0) player.x = W;
+  if (player.x > W) player.x = -player.w;
+
+  // Gravity
+  player.vy += GRAVITY;
+  player.y += player.vy;
+
+  if (player.vx !== 0) player.facing = player.vx > 0 ? 1 : -1;
+
+  // Squish
+  if (player.squishTimer > 0) {
+    player.squishTimer--;
+    player.squish = 1 + 0.3 * (player.squishTimer / 8);
+  } else {
+    player.squish = 1;
+  }
+
+  // Platform collision (only when falling)
+  if (player.vy > 0) {
+    platforms.forEach(p => {
+      const screenY = p.y - cameraY;
+      const px = player.x, py = player.y - cameraY;
+      if (
+        px + player.w > p.x + 4 &&
+        px < p.x + p.w - 4 &&
+        py + player.h >= screenY &&
+        py + player.h <= screenY + p.h + player.vy + 2
+      ) {
+        player.vy = JUMP_FORCE;
+        player.squish = 1.4;
+        player.squishTimer = 8;
+        spawnParticles(player.x + player.w/2, player.y + player.h - cameraY, COLORS.platform[p.ci]);
+      }
+    });
+  }
+
+  // Camera: follow player upward
+  const playerScreenY = player.y - cameraY;
+  if (playerScreenY < H * 0.4) {
+    const diff = H * 0.4 - playerScreenY;
+    cameraY -= diff;
+    player.y -= diff; // keep relative
+    cameraY += diff;
+    // Actually just move camera
+  }
+
+  const threshold = H * 0.4;
+  if (player.y - cameraY < threshold) {
+    cameraY = player.y - threshold;
+  }
+
+  // Score: each new platform height passed
+  const worldPlayerY = player.y;
+  if (worldPlayerY < lastScorePlatformY - 60) {
+    score++;
+    lastScorePlatformY = worldPlayerY;
+    document.getElementById('score-display').textContent = score;
+
+    if (score === 100 && !secretShown) {
+      secretShown = true;
+      setTimeout(showSecret, 300);
+    }
+  }
+
+  // Death: fell below screen
+  if (player.y - cameraY > H + 80) {
+    endGame();
+  }
+}
+
+function showSecret() {
+  state = 'secret';
+  document.getElementById('secret-screen').classList.remove('hidden');
+}
+
+function endGame() {
+  state = 'gameover';
+  if (score > bestScore) bestScore = score;
+  document.getElementById('final-score-text').textContent = `Score : ${score}`;
+  document.getElementById('best-score-text').textContent = `Meilleur : ${bestScore}`;
+  document.getElementById('gameover-screen').classList.remove('hidden');
+}
+
+// --- DRAW ---
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, COLORS.sky1);
+  grad.addColorStop(1, COLORS.sky2);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawStars() {
+  stars.forEach(s => {
+    const sy = ((s.y - cameraY * 0.3) % (H * 5) + H * 5) % (H * 5);
+    if (sy < 0 || sy > H) return;
+    ctx.beginPath();
+    ctx.arc(s.x, sy, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = COLORS.star;
+    ctx.globalAlpha = s.a;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawPlatforms() {
+  platforms.forEach(p => {
+    const sy = p.y - cameraY;
+    if (sy > H + 20 || sy < -20) return;
+    const c = COLORS.platform[p.ci];
+    const g = COLORS.platformGlow[p.ci];
+
+    // Glow
+    ctx.shadowColor = c;
+    ctx.shadowBlur = 14;
+    // Body
+    ctx.fillStyle = c;
+    roundRect(ctx, p.x, sy, p.w, p.h, 7);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Top shine
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    roundRect(ctx, p.x + 4, sy + 2, p.w - 8, 4, 3);
+    ctx.fill();
+  });
+}
+
+function drawPlayer() {
+  const sx = player.x;
+  const sy = player.y - cameraY;
+  const w = player.w, h = player.h;
+  const sq = player.squish;
+
+  ctx.save();
+  ctx.translate(sx + w / 2, sy + h);
+  ctx.scale(sq, 2 - sq);
+  ctx.translate(-(sx + w / 2), -(sy + h));
+
+  // Body
+  ctx.shadowColor = COLORS.player;
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = COLORS.player;
+  roundRect(ctx, sx, sy, w, h, 10);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Face
+  const eyeOffX = player.facing === 1 ? 8 : 6;
+  ctx.fillStyle = COLORS.playerEye;
+  ctx.beginPath();
+  ctx.arc(sx + eyeOffX, sy + 10, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(sx + eyeOffX + (player.facing === 1 ? 1 : -1), sy + 9, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Smile
+  ctx.strokeStyle = COLORS.playerEye;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(sx + w/2, sy + 18, 6, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// --- LOOP ---
+function loop() {
+  requestAnimationFrame(loop);
+  ctx.clearRect(0, 0, W, H);
+  drawBackground();
+  drawStars();
+
+  if (state === 'play' || state === 'secret') {
+    spawnPlatforms();
+    updatePlayer();
+    updateParticles();
+    drawPlatforms();
+    drawParticles();
+    drawPlayer();
+  } else if (state === 'gameover' || state === 'start') {
+    drawPlatforms();
+    drawPlayer();
+  }
+}
+
+// --- INPUT ---
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+  if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+  if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+});
+
+// Touch zones
+const ctrlLeft = document.getElementById('ctrl-left');
+const ctrlRight = document.getElementById('ctrl-right');
+ctrlLeft.addEventListener('touchstart', e => { e.preventDefault(); keys.left = true; }, { passive: false });
+ctrlLeft.addEventListener('touchend', e => { e.preventDefault(); keys.left = false; }, { passive: false });
+ctrlRight.addEventListener('touchstart', e => { e.preventDefault(); keys.right = true; }, { passive: false });
+ctrlRight.addEventListener('touchend', e => { e.preventDefault(); keys.right = false; }, { passive: false });
+
+// Gyroscope / tilt
+if (window.DeviceMotionEvent) {
+  window.addEventListener('devicemotion', e => {
+    if (e.accelerationIncludingGravity) {
+      tiltX = -(e.accelerationIncludingGravity.x || 0) / 9.8;
+      tiltX = Math.max(-1, Math.min(1, tiltX));
+    }
+  });
+}
+
+// Buttons
+document.getElementById('start-btn').addEventListener('click', () => {
+  document.getElementById('start-screen').classList.add('hidden');
+  state = 'play';
+  initGame();
+});
+
+document.getElementById('retry-btn').addEventListener('click', () => {
+  document.getElementById('gameover-screen').classList.add('hidden');
+  state = 'play';
+  initGame();
+});
+
+document.getElementById('continue-btn').addEventListener('click', () => {
+  document.getElementById('secret-screen').classList.add('hidden');
+  state = 'play';
+  // Continue playing, don't reset score
+});
+
+// --- START ---
+initStars();
+initPlatforms();
+initPlayer();
+initParticles();
+loop();
+</script>
+</body>
+</html>
